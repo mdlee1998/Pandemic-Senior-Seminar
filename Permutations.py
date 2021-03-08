@@ -1,6 +1,9 @@
 import math
 import numpy as np
 import itertools
+import sys
+
+from ConnectedGraphs import connectedGraphs
 
 def split(word):
     return [int(char) for char in word]
@@ -51,6 +54,9 @@ def indices(lst, element):
             return result
         result.append(offset)
 
+def diff(li1, li2):
+    return (list(list(set(li1)-set(li2))))
+
 def addStates(totalOutbreaks, fromState, maxOutbreaks):
     numCities = len(fromState) - 1
     tuples = itertools.product(range(totalOutbreaks), repeat = numCities)
@@ -93,6 +99,80 @@ def statesToFile(states):
         f.write(i)
         f.write("\n")
 
+def probabilityTerm(edgeCount, totalEdges, p):
+    return (p ** edgeCount) * ((1 - p) ** (totalEdges - edgeCount))
+
+def requiredEdge(newCubes, newOuts):
+    return newCubes + newOuts - 1
+
+def requiredNonEdge(newCubes, newOuts, numCities):
+    return newOuts * (numCities - newOuts) - newCubes
+
+def probability(fromState, toState, p, cityProbability, totalEdges):
+    newOuts = toState[len(fromState) - 1] - fromState[len(fromState) - 1]
+
+    hs = indices(fromState[:-1], 3)
+    hsCount = len(hs)
+    nonHS = len(fromState) - hsCount - 1
+
+    if newOuts == 0:
+        return 1 / (len(fromState) - 1)
+    newCubes = 0
+    for i in range(len(fromState) - 1):
+        newCubes += toState[i] - fromState[i]
+
+    newHS = diff(indices(toState[:-1], 3), hs)
+
+    requiredEdges = requiredEdge(newCubes, newOuts)
+    requiredNonEdges = requiredNonEdge(newCubes, newOuts, len(fromState) - 1)
+
+    probability = 0
+    TEST = False
+    if newOuts > 2 and len(newHS) > 0:
+        return hsCount * cityProbability * badCase(hsCount, nonHS, hs, newHS, totalEdges, requiredEdges, requiredNonEdges, newCubes, p)
+    else:
+        if fromState == [3,0,1,0] and toState == (3,1,2,1):
+            TEST = True
+        return hsCount * cityProbability * goodCase(hsCount, nonHS, totalEdges, requiredEdges, requiredNonEdges, p, TEST)
+
+def goodCase(countHS, nonOutbreak, totalEdges, requiredEdges, requiredNonEdges, p, TEST):
+    sum = 0
+    maxEdges = totalEdges - requiredNonEdges
+    for i in range(requiredEdges, maxEdges + 1):
+        term = probabilityTerm(i, totalEdges, p)
+        coefficient = getGraphCounts(countHS, nonOutbreak, i, requiredEdges, TEST)
+        sum += term * coefficient
+    return sum
+
+def badCase(countHS, nonOutbreak, hs, newHs, totalEdges, requiredEdges, requiredNonEdges, newCubes, fromState, toState, p):
+    sum = goodCase(countHS, nonOutbreak, totalEdges, requiredEdges, requiredNonEdges, p, False)
+    for i in range(0, len(newHs) + 1):
+        for thisOne in itertools.combinations(newHs, i):
+            newHsCubes = 0
+            for i in thisOne:
+                newHsCubes += (toState[i] - fromState[i])
+                if newHsCubes <= newCubes:
+                    sum += goodCase(countHS, nonOutbreak, totalEdges, requiredEdges, requiredNonEdge(newCubes - newHsCubes, newOuts, len(fromState) - 1), p, False)
+    return sum
+
+
+def getGraphCounts(countHS, nonOutbreak, edges, minEdges, TEST):
+    optionalEdges = math.comb(nonOutbreak, 2)
+    sum = 0
+    connectedGraphs = numConnectedGraphsOnHS(countHS, edges, TEST)
+    sum += (math.comb(optionalEdges, edges - minEdges) * connectedGraphs)
+    return sum
+
+
+def numConnectedGraphsOnHS(countHS, edges, TEST):
+    if countHS == 1:
+        return 1
+    if edges == countHS - 1:
+        return countHS ** (countHS - 2)
+    if edges > math.comb(countHS - 1, 2):
+        return math.comb(math.comb(countHS, 2), edges)
+    index = edges - countHS
+    return connectedGraphs[index][countHS]
 
 def createMatrix(numCities, maxOutbreaks, p):
     totalEdges = math.comb(numCities, 2)
@@ -104,8 +184,13 @@ def createMatrix(numCities, maxOutbreaks, p):
         nextStates = generateNextStates(list(i), maxOutbreaks)
         index = states[i]
         for j in nextStates:
-            matrix[index][states[tuple(j)]] = 1
+            if j != ('E', 'E'):
+                matrix[index][states[tuple(j)]] = probability(list(i), j, p, cityProbability, totalEdges)
     statesToFile(states)
     np.savetxt("Transitions.csv", matrix, delimiter=',', fmt='%1.5f')
 
-createMatrix(3, 2, 0.6)
+if __name__ == "__main__":
+    try:
+        createMatrix(sys.argv[1], sys.argv[2], sys.argv[3])
+    except:
+        pring("There was an error.")
